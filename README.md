@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## 항해플러스 4-1 성능 최적화
 
-## Getting Started
+### 나의 CI/CD 파이프라인
+![스크린샷 2025-05-30 오전 12 36 42](https://github.com/user-attachments/assets/85da5ef0-5b79-4f54-8971-7be1a9eeaee8)
 
-First, run the development server:
+1. 저장소를 체크아웃.
+2. Node.js 18.x 버전을 설정.
+3. 프로젝트 의존성을 설치.
+4. Next.js 프로젝트를 빌드.
+5. AWS 자격 증명을 구성 (key 방식이 아닌 OIDC 활용)
+6. 빌드된 파일을 S3 버킷에 동기화.
+7. CloudFront 캐시를 무효화.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+### 주요 링크
+* [s3 엔드포인트](http://my-hanghae-aws.s3-website.ap-northeast-2.amazonaws.com/)
+* [CloudFrount 배포 도메인](d18lidx9gvd7mj.cloudfront.net)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 주요 개념
+- GitHub Actions과 CI/CD 도구
+  * Github Actions란 코드 푸시나 PR시 workflow를 자동으로 실행해 주는 장치 deploy.yml 안에 저장된 스크립트를 실행한다.
+  * CI (Continuous Integration) 작업한 코드를 중앙 저장소에 자주 병합하고, 빌드하고 테스트하며 코드 품질을 보장해주는 것, 지속적인 통합이란다. 계속해서 통합 그러면 문제를 더 빨리 체크 하고 수정해 나갈 수 있을 거 같다.
+  * CD (Continuous Deployment/Delivery) 지속적인 배포 우리가 개발한 CI를 통과한 코드를 지속적으로 환경에 맞게 배포, CI를 통과했다는 것이 이미 어느정도 보장된 코드라는 것, 지속적인 배포를 통해 현재의 작업을 빠르게 확인 그리고 고객에게 더 쉽게 접근할 수 있을 거  같다.
+- S3와 스토리지
+  * Amazon s3란 버킷이라는 논리적 저장소에 파일을 저장하는 곳! 객체 단위로 저장해서 장점이 있습니다.
+  * 이미지, 동영상, 정적 웹사이트 파일, 백업 데이터 등 크고 작은 파일을 무제한에 가깝게 저장
+- CloudFront와 CDN
+  * 전 세계에 분산된 엣지 서버를 통해 사용자와 가장 가까운 지점에서 콘텐츠를 전달하는 서비스
+  * 꼭 우리의 택배 물류 센터 예시를 들었는데, 쿠팡에서 물류 알바를 해본 경험으로, 오히려 쿠팡에 더 가깝지 않을까! 쿠팡의 로켓배송처럼 CDN도 로켓배송이다!
+  * CloudFront는 AWS가 제공하는 CDN 서비스이다. AWS같은 경우엔 전세계에 망이 설치 되어있으니 안정적인 서비스가 가능하고, 중간 허브 같은 것들도 많이 준비되어있으니, 더 빠르게 서비스 제공이 가능할 거 같다.
+  * 그리고 s3와 연동이 아주아주 좋다. s3와 연동이 되면 뭐가 좋을까? 캐시로 저장되어있는 데이터는 굳이 저장소로 다시가서 해당파일을 확인후에 보여주지 않고 바로 보여줄 수 있다는 장점이 있을 거 같다. 그리고 이 이유때문에 s3에 소스 코드가 새롭게 배포된다면 반드시 무효화를 해주는것이 중요하다. 캐싱 주기를 짧게 가져가는 것도 장점이겠지만, 너무 짧으면 성능이 저하된것 처럼 보일 수 있을 거 같으니 밸런스 있게 설정해보자!
+- 캐시 무효화(Cache Invalidation)
+  * CDN에 이미 저장된(캐싱된) 특정 파일을 ‘만료시키고’ 최신 버전을 다시 가져오도록 하는 작업
+  * 정적 파일(js/css 등에 해시를 붙이지 않았거나, HTML 같이 자주 바뀌는 리소스를 캐싱
+- Repository secret과 환경변수
+  * GitHub Secrets
+  * AWS 자격증명 , API 키, DB 비밀 번호 같은 민감 정보 암호화, 그렇다면 이미 .env보다 Github secrets가 공유 측면에서 장점이 있겠다. 매번 .env의 설정파일을 공유하는것도 은근 신경써야 한다.
+  * 워크플로내에서 쉽게 접근가능!
+  * 환경변수
+  * env상태 dev, production에 맞는 변수를 저장할 수 있다는게 장점인거 같다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## CloudFront와 S3 성능 비교
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| 성능비교  	|  CloudFront 	|  S3 	|
+|---	|---	|---	|
+|html파일|  41.51 	|  129.1 	|
+| contentscript.js   	| 7.14  	| 9.4  	|
+| font 	|  30 	|   86	|
+|  css 	|   32	|  81 	|
+|  js 	|   55	|   210	|
+|  svg 	|  20 	|  120 	|
 
-## Learn More
+각 파일별 호출 빈도를 보자면 지금 Next의 기본 화면에서는 js 비중이 33% (js + contentscript.js)로 제일 많은것을 볼 수 있었습니다. 아래는 전체 호출의 비율을 나타낸 것입니다.
 
-To learn more about Next.js, take a look at the following resources:
+<img width="605" alt="스크린샷 2025-05-30 오전 1 35 42" src="https://github.com/user-attachments/assets/19f66ac6-0f0a-4abf-bf01-f245b6184e01" />
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+위의 테이블을 보면 js에서의 차이가 작개는 1.2-3배에서 6배까지 차이를 보여주고 있습니다. 수치상으로 커보였는데 그래프로 보면 더 극명하게 확인할 수 있습니다.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+<img width="604" alt="스크린샷 2025-05-30 오전 1 34 22" src="https://github.com/user-attachments/assets/c66a4abd-ed2e-4f48-8d9c-ae5d4f43c683" />
 
-## Deploy on Vercel
+이것을 보고 lighthouse로 성능을 비교하면 어떨까? 하는 생각에 도달했고 결과는 놀라웠습니다.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### S3
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+![스크린샷 2025-05-30 오전 1 40 31](https://github.com/user-attachments/assets/274b1c6c-d017-4b23-b81a-48b15219f24e)
+
+### Cloud Front
+
+![스크린샷 2025-05-30 오전 1 40 39](https://github.com/user-attachments/assets/f2585c2b-37c2-49bf-b9a5-c91806f91318)
+
+
+## 소감
+동일한 소스 코드지만 어떻게 배포하느냐에 따라 성능의 차이가 크다는 것을 알 수 있었습니다. 그냥 배포하고 화면에 잘 보이는게 끝이 아닌 어떻게 인프라를 구성해서 성능을 최적화 할 것인가에 대해 고민해봐야 한다는 점을 깊게 느낄 수 있던 시간이었습니다. 사실 이게 크지도 않고 기본소스인데 차이가 나봤자 얼마나 나겠어라고 생각했던 저의 안일함을 좀 돌아보게되었습니다. 배포와 인프라 환경에도 좀 더 관심을 가지는 개발자가 되어야겠습니다.
+
+
+
+	
+		
+		
+		
+		
+
+
+   
